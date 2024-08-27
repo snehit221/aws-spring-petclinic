@@ -1,0 +1,311 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: All Infra for Spring Pet Clinic App
+
+Parameters:
+  RdsPassword:
+    Type: String
+    NoEcho: true
+    Description: The master password for the RDS instance
+
+Resources:
+  PetClinicVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: PetClinicVPC
+
+  MyInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MyInternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref PetClinicVPC
+      InternetGatewayId: !Ref MyInternetGateway
+
+  # Public Subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref PetClinicVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnetPetClinic1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref PetClinicVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnetPetClinic2
+
+  # Private Subnets
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref PetClinicVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: PrivateSubnetPetClinic1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref PetClinicVPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: PrivateSubnetPetClinic2
+
+  MyPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref PetClinicVPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTablePetClinic
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref MyPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MyInternetGateway
+
+  MyPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref PetClinicVPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTablePetClinic
+
+  PublicPetClinicSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Pet Clinic Application VPC
+      VpcId: !Ref PetClinicVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTP traffic
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTPS traffic
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0 # Or restrict to the private subnet CIDR block
+      Tags:
+        - Key: Name
+          Value: PublicSecurityGroupPetClinic
+
+  PrivatePetClinicSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Private security group for RDS instance
+      VpcId: !Ref PetClinicVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref PublicPetClinicSG
+      Tags:
+        - Key: Name
+          Value: PrivateSecurityGroupPetClinic
+
+
+  # Route Table Associations
+  PublicSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref MyPublicRouteTable
+
+  PublicSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref MyPublicRouteTable
+
+  PrivateSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref MyPrivateRouteTable
+
+  PrivateSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref MyPrivateRouteTable
+
+
+  # RDS instance...
+  MyRDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceClass: db.t3.micro # Choose the instance type
+      Engine: mysql # Or the database engine you are using
+      DBInstanceIdentifier: my-rds-instance
+      MasterUsername: petclinic
+      MasterUserPassword: !Ref RdsPassword
+      DBName: petclinic
+      VPCSecurityGroups:
+        - !Ref PrivatePetClinicSG
+      DBSubnetGroupName: !Ref MyDBSubnetGroup
+      MultiAZ: true
+      AllocatedStorage: 20
+      BackupRetentionPeriod: 7
+      Tags:
+        - Key: Name
+          Value: MyRDSInstance
+
+  MyDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: My DB Subnet Group
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: MyDBSubnetGroup
+
+  #Elastic Bean Stalk Config
+  ElasticBeanstalkApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: PetClinicAppTest8
+      Description: Spring Pet Clinic Application
+
+  ElasticBeanstalkApplicationVersion:
+    Type: AWS::ElasticBeanstalk::ApplicationVersion
+    Properties:
+      ApplicationName: !Ref ElasticBeanstalkApplication
+      SourceBundle:
+        S3Bucket: spring-pet-clinic-app
+        S3Key: spring-petclinic-3.3.0-SNAPSHOT.war
+
+  ElasticBeanstalkEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: !Ref ElasticBeanstalkApplication
+      EnvironmentName: PetClinicEnv8
+      SolutionStackName: "64bit Amazon Linux 2023 v4.2.7 running Corretto 17"
+      VersionLabel: !Ref ElasticBeanstalkApplicationVersion
+      OptionSettings:
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: LabInstanceProfile
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: InstanceType
+          Value: t3.small
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: EC2KeyName
+          Value: vockey-latest
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: SecurityGroups
+          Value: !Ref PublicPetClinicSG
+        - Namespace: aws:autoscaling:asg
+          OptionName: MinSize
+          Value: 1
+        - Namespace: aws:autoscaling:asg
+          OptionName: MaxSize
+          Value: 2
+        - Namespace: aws:autoscaling:trigger
+          OptionName: MeasureName
+          Value: CPUUtilization
+        - Namespace: aws:autoscaling:trigger
+          OptionName: Statistic
+          Value: Average
+        - Namespace: aws:autoscaling:trigger
+          OptionName: Unit
+          Value: Percent
+        - Namespace: aws:autoscaling:trigger
+          OptionName: UpperThreshold
+          Value: 80
+        - Namespace: aws:autoscaling:trigger
+          OptionName: LowerThreshold
+          Value: 20
+        - Namespace: aws:autoscaling:trigger
+          OptionName: Period
+          Value: 60
+        - Namespace: aws:autoscaling:trigger
+          OptionName: BreachDuration
+          Value: 120
+        - Namespace: aws:ec2:vpc
+          OptionName: VPCId
+          Value: !Ref PetClinicVPC
+        - Namespace: aws:ec2:vpc
+          OptionName: Subnets
+          Value: !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2 ] ]
+        - Namespace: aws:ec2:vpc
+          OptionName: ELBSubnets
+          Value: !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2 ] ]
+        - Namespace: aws:ec2:vpc
+          OptionName: ELBScheme
+          Value: public
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: ServiceRole
+          Value: arn:aws:iam::813697295019:role/LabRole
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: PORT
+          Value: '8080'
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RDS_ENDPOINT
+          Value: !GetAtt MyRDSInstance.Endpoint.Address
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RDS_PASSWORD
+          Value: !Ref RdsPassword
+
+Outputs:
+  PetClinicVPC:
+    Description: "VPC ID"
+    Value: !Ref PetClinicVPC
+  PublicSubnet1:
+    Description: "Public Subnet 1 ID"
+    Value: !Ref PublicSubnet1
+  PublicSubnet2:
+    Description: "Public Subnet 2 ID"
+    Value: !Ref PublicSubnet2
+  PrivateSubnet1:
+    Description: "Private Subnet 1 ID"
+    Value: !Ref PrivateSubnet1
+  PrivateSubnet2:
+    Description: "Private Subnet 2 ID"
+    Value: !Ref PrivateSubnet2
+  RDSInstanceEndpoint:
+    Description: "RDS Instance Endpoint"
+    Value: !GetAtt MyRDSInstance.Endpoint.Address
+
+#aws cloudformation validate-template --template-body file://IaC.yaml
+#aws cloudformation create-stack --stack-name PetClinicStack --template-body file://IaC.yaml
+#aws cloudformation delete-stack --stack-name PetClinicStack
+#aws cloudformation describe-stack-events --stack-name PetClinicStack
+
+

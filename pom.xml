@@ -36,6 +36,8 @@
     <nohttp-checkstyle.version>0.0.11</nohttp-checkstyle.version>
     <spring-format.version>0.0.41</spring-format.version>
 
+    <!-- AWS properties added !-->
+    <aws.sdk.version>2.23.10</aws.sdk.version>
   </properties>
 
   <dependencies>
@@ -69,6 +71,12 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3</artifactId>
+      <version>${aws.sdk.version}</version>
+    </dependency>
+
 
     <!-- Databases - Uses H2 by default -->
     <dependency>

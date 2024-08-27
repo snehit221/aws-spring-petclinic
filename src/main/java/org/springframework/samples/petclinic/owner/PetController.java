@@ -15,22 +15,18 @@
  */
 package org.springframework.samples.petclinic.owner;
 
+import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.Collection;
-
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.samples.petclinic.asset.storage.S3StorageService;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.ModelMap;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.WebDataBinder;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.InitBinder;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-
-import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /**
@@ -44,10 +40,20 @@ class PetController {
 
 	private static final String VIEWS_PETS_CREATE_OR_UPDATE_FORM = "pets/createOrUpdatePetForm";
 
+	private static final String bucket_name = "spring-pet-assets";
+
 	private final OwnerRepository owners;
+
+	private S3StorageService s3StorageService;
 
 	public PetController(OwnerRepository owners) {
 		this.owners = owners;
+	}
+
+	@Autowired
+	public PetController(OwnerRepository owners, S3StorageService s3StorageService) {
+		this.owners = owners;
+		this.s3StorageService = s3StorageService;
 	}
 
 	@ModelAttribute("types")
@@ -99,8 +105,18 @@ class PetController {
 	}
 
 	@PostMapping("/pets/new")
-	public String processCreationForm(Owner owner, @Valid Pet pet, BindingResult result, ModelMap model,
-			RedirectAttributes redirectAttributes) {
+	public String processCreationForm(Owner owner, @Valid Pet pet, @RequestParam("image") MultipartFile file,
+			BindingResult result, ModelMap model, RedirectAttributes redirectAttributes) {
+
+		System.out.println("running the flow for adding a new pet... " + pet.getName());
+
+		try {
+			pet.setImageUrl(String.valueOf(s3StorageService.uploadFile(file, bucket_name)));
+		}
+		catch (Exception e) {
+			System.err.println("Exception during S3 upload controller: " + e);
+		}
+
 		if (StringUtils.hasText(pet.getName()) && pet.isNew() && owner.getPet(pet.getName(), true) != null) {
 			result.rejectValue("name", "duplicate", "already exists");
 		}
