@@ -1,4 +1,5 @@
-## Cloud Native Spring PetClinic Web Application Project Architecture:
+## Architecture of the Pet Clinic Application migrated from on-premise to AWS Cloud:
+
 
 ![Architecture Diagram](Architecture1.png)
 
